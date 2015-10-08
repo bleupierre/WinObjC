@@ -106,6 +106,7 @@ unsigned long class_getInstanceSize(Class);
 Class object_setClass(id obj_, Class cls);
 Class object_getClass(id obj_);
 Method *class_copyMethodList(Class classRef, unsigned int *outCount);
+IMP class_getMethodImplementation(Class, SEL);
 const char* class_getName(Class cls);
 Class class_getSuperclass(Class);
 BOOL class_conformsToProtocol(Class, Protocol*);
@@ -121,6 +122,7 @@ const char* sel_getName(SEL);
 SEL sel_registerName(const char*);
 
 int objc_getClassList(Class *classes, int maxCount);
+void *object_getIndexedIvars(id);
 
 id objc_storeWeak(id *addr, id obj);
 id objc_loadWeak(id *object);
@@ -132,6 +134,11 @@ void objc_release_ref(id obj);
 
 id objc_allocateObject(Class classRef, unsigned int extraBytes);
 void objc_deallocateObject(id obj);
+
+Class objc_allocateClassPair(Class super, char *name, size_t extraBytes);
+void objc_registerClassPair(Class cls);
+IMP class_replaceMethod(Class cls, SEL sel, IMP imp, const char *types);
+BOOL class_addMethod(Class cls, SEL sel, IMP imp, const char *types);
 
 __END_DECLS
 

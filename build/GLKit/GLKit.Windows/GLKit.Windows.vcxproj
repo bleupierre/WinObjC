@@ -151,10 +151,15 @@
       <SubSystem>Console</SubSystem>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <GenerateWindowsMetadata>false</GenerateWindowsMetadata>
+      <AdditionalDependencies>UIKit.lib;Foundation.lib;QuartzCore.lib;CoreFoundation.lib;CoreGraphics.lib;OpenGLES.lib;ObjCUWP.lib;kernel32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(AdditionalLibraryDirectories);$(StarboardLibDirs);$(StarboardPrebuiltLibsDir);$(StarboardSdkRoot)\build\Win32\$(Configuration)\$(TargetOsAndVersion);$(StarboardSdkRoot)\deps\prebuilt\$(TargetOsAndVersion)\$(PlatformTarget)</AdditionalLibraryDirectories>
+      <ModuleDefinitionFile>..\GLKit.Shared\GLKit.def</ModuleDefinitionFile>
     </Link>
     <ClangCompile>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <SystemHeaderDeps>true</SystemHeaderDeps>
+      <IncludePaths>$(StarboardBasePath)\deps\prebuilt\include;$(StarboardBasePath)\deps\prebuilt\include\freetype;$(StarboardBasePath)\deps\prebuilt\include\cairo;$(StarboardBasePath)\deps\prebuilt\include\libjpeg;$(StarboardBasePath)\Frameworks\include</IncludePaths>
+      <AdditionalOptions>-DSTARBOARD_PORT=1 -DGLKIT_IMPEXP=__declspec(dllexport) %(AdditionalOptions)</AdditionalOptions>
     </ClangCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -169,10 +174,14 @@
       <SubSystem>Console</SubSystem>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <GenerateWindowsMetadata>false</GenerateWindowsMetadata>
+      <AdditionalDependencies>UIKit.lib;Foundation.lib;QuartzCore.lib;CoreFoundation.lib;CoreGraphics.lib;OpenGLES.lib;ObjCUWP.lib;kernel32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(AdditionalLibraryDirectories);$(StarboardLibDirs);$(StarboardPrebuiltLibsDir);$(StarboardSdkRoot)\build\Win32\$(Configuration)\$(TargetOsAndVersion);$(StarboardSdkRoot)\deps\prebuilt\$(TargetOsAndVersion)\$(PlatformTarget)</AdditionalLibraryDirectories>
+      <ModuleDefinitionFile>..\GLKit.Shared\GLKit.def</ModuleDefinitionFile>
     </Link>
     <ClangCompile>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <SystemHeaderDeps>true</SystemHeaderDeps>
+      <IncludePaths>$(StarboardBasePath)\deps\prebuilt\include;$(StarboardBasePath)\deps\prebuilt\include\freetype;$(StarboardBasePath)\deps\prebuilt\include\cairo;$(StarboardBasePath)\deps\prebuilt\include\libjpeg;$(StarboardBasePath)\Frameworks\include</IncludePaths>
     </ClangCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|arm'">

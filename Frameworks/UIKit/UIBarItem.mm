@@ -17,6 +17,7 @@
 #include "Starboard.h"
 #include "UIKit/UIBarItem.h"
 #include "UIKit/UIView.h"
+#include "UIBarItemInternal.h"
 
 @implementation UIBarItem {
     idretaintype(NSString) __title;
@@ -31,31 +32,32 @@
     UIBarButtonSystemItem _systemItem;
     bool _pressed;
     UIBarButtonItemStyle _style;
+
+    idretaintype(UIColor) _tintColor;
 }
-    -(void) awakeFromNib {
-    }
-    
-    -(void) setTintColor:(UIColor*)color {
-        _tintColor = color;
-    }
 
-    -(UIColor*) tintColor {
-        return _tintColor;
-    }
+- (void)awakeFromNib {
+}
 
-    -(void) setImage:(UIImage*)image {
-        _image = image;
-    }
+- (void)setTintColor:(UIColor*)color {
+    _tintColor = color;
+}
 
-    -(UIImage*) image {
-        return _image;
-    }
+- (UIColor*)tintColor {
+    return _tintColor;
+}
 
-    -(void) dealloc {
-        _tintColor = nil;
-        [super dealloc];
-    }
+- (void)setImage:(UIImage*)image {
+    _image = image;
+}
 
-    
+- (UIImage*)image {
+    return _image;
+}
+
+- (void)dealloc {
+    _tintColor = nil;
+    [super dealloc];
+}
+
 @end
-

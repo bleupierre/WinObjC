@@ -168,6 +168,7 @@ UIKIT_EXPORT_CLASS
 
 - (NSArray *)constraints;
 - (void)updateConstraints;
+- (void)updateConstraintsIfNeeded;
 - (void)addConstraint:(NSLayoutConstraint *)constraint;
 - (void)addConstraints:(NSArray *)constraints;
 - (void)removeConstraint:(NSLayoutConstraint *)constraint;
@@ -176,8 +177,8 @@ UIKIT_EXPORT_CLASS
 - (void)setContentCompressionResistancePriority:(UILayoutPriority)priority forAxis:(UILayoutConstraintAxis)axis;
 - (UILayoutPriority)contentHuggingPriorityForAxis:(UILayoutConstraintAxis)axis;
 - (void)setContentHuggingPriority:(UILayoutPriority)priority forAxis:(UILayoutConstraintAxis)axis;
-
-- (void)invalidateIntrinsicContentSize;
+- (BOOL)needsUpdateConstraints;
+- (void)setNeedsUpdateConstraints;
 
 - (void)removeMotionEffect:(UIMotionEffect *)effect;
 - (void)addMotionEffect:(UIMotionEffect *)effect;
@@ -208,12 +209,6 @@ UIKIT_EXPORT_CLASS
 + (void)setAnimationWillStartSelector:(SEL)selector;
 + (BOOL)areAnimationsEnabled;
 + (void)setAnimationsEnabled:(BOOL)enabled;
-
-// -- internal --
--(void) _setShouldLayout;
-
-+(void) _setNestedAnimationsEnabled:(BOOL)enable;
-// --------------
 
 @property (nonatomic) CGRect frame;
 @property (nonatomic) CGRect bounds;
