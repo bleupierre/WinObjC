@@ -16,8 +16,11 @@
 
 #pragma once
 
-#define COMPARISON_EPSILON 0.0000001f
+#include <math.h>
+#import <Foundation/Foundation.h>
+#import <GLKit/GLKitExport.h>
 
+#define COMPARISON_EPSILON 0.0000025f
 #define _GLK_MIN(a,b)   ((a) < (b) ? (a) : (b))
 #define _GLK_MAX(a, b)  ((a) > (b) ? (a) : (b))
 

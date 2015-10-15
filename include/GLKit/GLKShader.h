@@ -19,8 +19,10 @@
 #include <OpenGLES/ES2/gl.h>
 #include <OpenGLES/ES2/glext.h>
 
+#import <Foundation/NSObject.h>
 #import <GLKit/GLKitExport.h>
 #import <GLKit/GLKShaderDefs.h>
+#import <GLKit/GLKMath.h>
 
 enum _GLKShaderVarType {
     GLKS_INVALID = 0,
@@ -33,8 +35,6 @@ enum _GLKShaderVarType {
     GLKS_MAT4
 };
 typedef unsigned int GLKShaderVarType;
-
-extern size_t GLKShaderVarSizes[];
 
 @class GLKShaderEffect;
 @class GLKShader;
