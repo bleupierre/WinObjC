@@ -69,7 +69,6 @@ static int stackLevel = 0;
 int viewCount = 0;
 
 @implementation UIView {
-    NSMutableArray* _constraints;
     idretaintype(CALayer) layer;
     bool _deallocating;
 }
@@ -94,7 +93,8 @@ int viewCount = 0;
     self->priv->currentTouches = [[NSMutableArray alloc] initWithCapacity:16];
     self->priv->contentMode = UIViewContentModeScaleToFill;
     self->priv->gestures = [NSMutableArray new];
-    self->priv->constraints = [NSMutableArray new];
+    self->priv->constraints.attach([NSMutableArray new]);
+    self->priv->associatedConstraints.attach([NSMutableArray new]);
 
     static BOOL autoLayoutInit;
     if (!autoLayoutInit) {
@@ -123,17 +123,12 @@ int viewCount = 0;
 }
 
 static UIView* initInternal(UIView* self, CGRect pos) {
-    EbrDebugLog(
-        "[%f,%f] @ %fx%f\n", (float)pos.origin.x, (float)pos.origin.y, (float)pos.size.width, (float)pos.size.height);
+    EbrDebugLog("[%f,%f] @ %fx%f\n", (float)pos.origin.x, (float)pos.origin.y, (float)pos.size.width, (float)pos.size.height);
 
     [self initPriv];
     [self setOpaque:TRUE];
     [self setFrame:pos];
     [self setNeedsDisplay];
-
-    if ([self conformsToProtocol:@protocol(AutoLayoutView)]) {
-        [self autoLayoutSetVars:pos];
-    }
 
     return self;
 }
@@ -265,8 +260,8 @@ static UIView* initInternal(UIView* self, CGRect pos) {
                     }
                 }
 
-                if (![_constraints containsObject:constraint] && !remove) {
-                    [_constraints addObject:constraint];
+                if (![priv->constraints containsObject:constraint] && !remove) {
+                    [priv->constraints addObject:constraint];
                     if ([constraint conformsToProtocol:@protocol(AutoLayoutConstraint)]) {
                         [constraint autoLayoutConstraintAddedToView:self];
                     }
@@ -357,11 +352,6 @@ static UIView* initInternal(UIView* self, CGRect pos) {
 }
 
 - (void)__didLayout {
-    UIViewController* controller = [UIViewController controllerForView:self];
-
-    if (controller != nil) {
-        [controller viewDidLayoutSubviews];
-    }
 }
 
 - (void)setNeedsLayout {
@@ -446,8 +436,7 @@ static void doResize(unsigned mask, float& pos, float& size, float parentSize, f
             }
         } break;
 
-        case (UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin |
-              UIViewAutoresizingFlexibleWidth): {
+        case (UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin | UIViewAutoresizingFlexibleWidth): {
             float totalSize = 0.0f;
             float lastSize = parentSize - (pos + size);
             float newSize;
@@ -484,10 +473,9 @@ static void adjustSubviews(UIView* self, CGSize parentSize, CGSize delta) {
 
             UIViewAutoresizing mask = subview->priv->autoresizingMask;
 
-            if (mask == UIViewAutoresizingNone)
+            if (mask == UIViewAutoresizingNone || !subview->priv->translatesAutoresizingMaskIntoConstraints) {
                 continue;
-            if (subview->priv->_constrained)
-                continue;
+            }
 
             CGRect curFrame, origFrame;
             curFrame = [subview frame];
@@ -546,6 +534,14 @@ static float doRound(float f) {
         return;
     }
 
+    //  Get our existing frame
+    CGRect curFrame;
+    curFrame = [self frame];
+
+    if (memcmp(&frame, &curFrame, sizeof(CGRect)) == 0) {
+        return;
+    }
+
     frame.origin.x = doRound(frame.origin.x);
     frame.origin.y = doRound(frame.origin.y);
     frame.size.width = doRound(frame.size.width);
@@ -558,10 +554,7 @@ static float doRound(float f) {
                 frame.size.width,
                 frame.size.height);
 
-    //  Get our existing frame
     CGRect startFrame = frame;
-    CGRect curFrame;
-    curFrame = [self frame];
 
     if (frame.origin.x == doRound(curFrame.origin.x) && frame.origin.y == doRound(curFrame.origin.y) &&
         frame.size.width == doRound(curFrame.size.width) && frame.size.height == doRound(curFrame.size.height)) {
@@ -612,8 +605,17 @@ static float doRound(float f) {
 
     [layer setBounds:curBounds];
 
-    if ([self conformsToProtocol:@protocol(AutoLayoutView)]) {
-        [self autoLayoutSetVars:frame];
+    // Baseline constraints don't share a superview, and thus messes up our assumption of a child/sibling hierarchy.
+    // We do our autolayout in screen space, so even if the frame/bounds of the children aren't updated, we need
+    // to update the new absolute constraint positions.
+    for (UIView* child in [self subviews]) {
+        if (child->priv->translatesAutoresizingMaskIntoConstraints) {
+            [child autoLayoutUpdateConstraints];
+        }
+    }
+
+    if (self->priv->translatesAutoresizingMaskIntoConstraints) {
+        [self autoLayoutUpdateConstraints];
     }
 }
 
@@ -656,8 +658,7 @@ static float doRound(float f) {
     UIViewController* controller = [UIViewController controllerForView:self];
 
     if (controller != nil && window != nil) {
-        UIViewController* rootController =
-            [[[[UIApplication sharedApplication] windows] objectAtIndex:0] rootViewController];
+        UIViewController* rootController = [[[[UIApplication sharedApplication] windows] objectAtIndex:0] rootViewController];
         if (rootController == nil) {
             [[[[UIApplication sharedApplication] windows] objectAtIndex:0] _setRootViewController:controller];
             rootController = controller;
@@ -668,8 +669,7 @@ static float doRound(float f) {
             [controller notifyViewWillAppear:g_presentingAnimated]; /*** should we do this? ****/
     }
     if (controller != nil && window == nil) {
-        UIViewController* rootController =
-            [[[[UIApplication sharedApplication] windows] objectAtIndex:0] rootViewController];
+        UIViewController* rootController = [[[[UIApplication sharedApplication] windows] objectAtIndex:0] rootViewController];
         UIViewController* parentController = [UIViewController controllerForView:superview];
         if (rootController == controller || g_alwaysSendViewEvents)
             [controller notifyViewWillDisappear:g_presentingAnimated]; /*** should we do this? ****/
@@ -701,12 +701,11 @@ static float doRound(float f) {
     UIViewController* controller = [UIViewController controllerForView:self];
 
     if (controller != nil && window != nil) {
-        UIViewController* rootController =
-            [[[[UIApplication sharedApplication] windows] objectAtIndex:0] rootViewController];
+        UIViewController* rootController = [[[[UIApplication sharedApplication] windows] objectAtIndex:0] rootViewController];
         UIViewController* parentController = [UIViewController controllerForView:superview];
         if (rootController == controller || [controller parentViewController] != nil ||
-            [controller isKindOfClass:[UINavigationController class]] ||
-            [parentController isKindOfClass:[UINavigationController class]] || g_alwaysSendViewEvents) {
+            [controller isKindOfClass:[UINavigationController class]] || [parentController isKindOfClass:[UINavigationController class]] ||
+            g_alwaysSendViewEvents) {
             if (stackLevel == 0) {
                 [controller notifyViewWillAppear:FALSE];
                 [controller notifyViewDidAppear:FALSE];
@@ -714,16 +713,15 @@ static float doRound(float f) {
         }
     }
     if (controller != nil && window == nil) {
-        UIViewController* rootController =
-            [[[[UIApplication sharedApplication] windows] objectAtIndex:0] rootViewController];
+        UIViewController* rootController = [[[[UIApplication sharedApplication] windows] objectAtIndex:0] rootViewController];
         if (rootController == controller) {
             [[[[UIApplication sharedApplication] windows] objectAtIndex:0] _setRootViewController:nil];
         }
 
         UIViewController* parentController = [UIViewController controllerForView:superview];
         if (rootController == controller || [controller parentViewController] != nil ||
-            [controller isKindOfClass:[UINavigationController class]] ||
-            [parentController isKindOfClass:[UINavigationController class]] || g_alwaysSendViewEvents)
+            [controller isKindOfClass:[UINavigationController class]] || [parentController isKindOfClass:[UINavigationController class]] ||
+            g_alwaysSendViewEvents)
             [controller notifyViewDidDisappear:FALSE];
     }
 
@@ -1465,7 +1463,6 @@ static float doRound(float f) {
 
 - (void)setTranslatesAutoresizingMaskIntoConstraints:(BOOL)translate {
     self->priv->translatesAutoresizingMaskIntoConstraints = translate;
-    EbrDebugLog("setTranslatesAutoresizingMaskIntoConstraints(%d) not supported\n", (int)translate);
 }
 
 - (NSArray*)constraints {
@@ -1473,11 +1470,12 @@ static float doRound(float f) {
 }
 
 - (void)addConstraint:(NSLayoutConstraint*)constraint {
-    if (constraint.firstItem != self && [constraint.firstItem superview] != self &&
-        (constraint.secondItem && (constraint.secondItem != self || [constraint.secondItem superview] != self))) {
+    // Constraints can only be added if they are self or a child of this view.
+    if (((constraint.firstItem != self) && ([constraint.firstItem superview] != self)) ||
+        (constraint.secondItem && ((constraint.secondItem != self) && ([constraint.secondItem superview] != self)))) {
         EbrDebugLog(
             "Only constraints with relations to this view and its children may be added. "
-            "This error may occur if your view hierarchy has not yet been initialized.");
+            "This error may occur if your view hierarchy has not yet been initialized.\n");
         return;
     }
 
@@ -1490,6 +1488,8 @@ static float doRound(float f) {
     if ([constraint conformsToProtocol:@protocol(AutoLayoutConstraint)]) {
         [constraint autoLayoutConstraintAddedToView:self];
     }
+
+    [self setNeedsUpdateConstraints];
 }
 
 - (void)removeConstraint:(id)constraint {
@@ -1498,13 +1498,14 @@ static float doRound(float f) {
     if ([constraint conformsToProtocol:@protocol(AutoLayoutConstraint)]) {
         [constraint autoLayoutConstraintRemovedFromView];
     }
+
+    [self setNeedsUpdateConstraints];
 }
 
 - (void)addConstraints:(NSArray*)constraints {
     for (int i = 0; i < [constraints count]; i++) {
         [self addConstraint:(NSLayoutConstraint*)[constraints objectAtIndex:i]];
     }
-    [self updateConstraints];
 }
 
 - (void)removeConstraints:(NSArray*)constraints {
@@ -1513,10 +1514,16 @@ static float doRound(float f) {
     }
 }
 
-- (void)updateConstraints {
-    for (int i = 0; i < priv->childCount; i++) {
-        [priv->childAtIndex(i)->self updateConstraints];
+- (void)_applyConstraints {
+    [self updateConstraintsIfNeeded];
+
+    for (UIView* child in [self subviews]) {
+        [child _applyConstraints];
     }
+}
+
+- (void)updateConstraints {
+    priv->_constraintsNeedUpdate = false;
 
     if ([self conformsToProtocol:@protocol(AutoLayoutView)]) {
         [self autoLayoutUpdateConstraints];
@@ -1525,7 +1532,6 @@ static float doRound(float f) {
 
 - (void)updateConstraintsIfNeeded {
     if (priv->_constraintsNeedUpdate) {
-        priv->_constraintsNeedUpdate = false;
         [self updateConstraints];
     }
 }
@@ -1535,7 +1541,16 @@ static float doRound(float f) {
 }
 
 - (void)setNeedsUpdateConstraints {
-    priv->_constraintsNeedUpdate = true;
+    for (NSLayoutConstraint* constraint in (NSArray*)priv->associatedConstraints) {
+        if ([constraint.firstItem isKindOfClass:[UIView class]]) {
+            UIView* view = (UIView*)constraint.firstItem;
+            view->priv->_constraintsNeedUpdate = true;
+        }
+        if ([constraint.secondItem isKindOfClass:[UIView class]]) {
+            UIView* view = (UIView*)constraint.secondItem;
+            view->priv->_constraintsNeedUpdate = true;
+        }
+    }
 }
 
 - (void)removeMotionEffect:(UIMotionEffect*)effect {
@@ -1574,7 +1589,7 @@ static float doRound(float f) {
             EbrDebugLog("Content compression resistance set on unknown axis\n");
             return;
     }
-    [self invalidateContentSize];
+    [self setNeedsUpdateConstraints];
 }
 
 - (UILayoutPriority)contentHuggingPriorityForAxis:(UILayoutConstraintAxis)axis {
@@ -1605,7 +1620,7 @@ static float doRound(float f) {
             EbrDebugLog("Content hugging set on unknown axis\n");
             return;
     }
-    [self invalidateContentSize];
+    [self setNeedsUpdateConstraints];
 }
 
 - (UIView*)viewWithTag:(int)tag {
@@ -1678,8 +1693,7 @@ static float doRound(float f) {
 - (id<CAAction>)actionForLayer:(CALayer*)actionLayer forKey:(NSString*)key {
     if (stackLevel > 0 && g_animationsDisabled == 0 && g_nestedAnimationsDisabled == 0) {
         if ([key isEqualToString:@"opacity"] || [key isEqualToString:@"position"] || [key isEqualToString:@"bounds"] ||
-            [key isEqualToString:@"bounds.origin"] || [key isEqualToString:@"bounds.size"] ||
-            [key isEqualToString:@"transform"]) {
+            [key isEqualToString:@"bounds.origin"] || [key isEqualToString:@"bounds.size"] || [key isEqualToString:@"transform"]) {
             CABasicAnimation* ret = [CABasicAnimation animationWithKeyPath:key];
 
             if (_animationProperties[stackLevel]._beginsFromCurrentState && ![key isEqualToString:@"opacity"]) {
@@ -1746,9 +1760,7 @@ static float doRound(float f) {
     [self commitAnimations];
 }
 
-+ (void)animateWithDuration:(double)duration
-                 animations:(animationBlockFunc)animationBlock
-                 completion:(completionBlockFunc)completion {
++ (void)animateWithDuration:(double)duration animations:(animationBlockFunc)animationBlock completion:(completionBlockFunc)completion {
     EbrDebugLog("animationWithDurationCompletion not supported\n");
     [self beginAnimations:nil context:0];
     _animationProperties[stackLevel]._completionBlock = COPYBLOCK(completion);
@@ -1808,8 +1820,7 @@ static float doRound(float f) {
     _animationProperties[stackLevel]._repeatCount = 0.0f;
     _animationProperties[stackLevel]._autoReverses = FALSE;
     _animationProperties[stackLevel]._beginsFromCurrentState = FALSE;
-    _animationProperties[stackLevel]._animationCurve =
-        [CAMediaTimingFunction functionWithName:@"kCAMediaTimingFunctionEaseInEaseOut"];
+    _animationProperties[stackLevel]._animationCurve = [CAMediaTimingFunction functionWithName:@"kCAMediaTimingFunctionEaseInEaseOut"];
     _animationProperties[stackLevel]._animationWillStartSelector = NULL;
     _animationProperties[stackLevel]._animationDidStopSelector = NULL;
     _animationProperties[stackLevel]._animationDelegate = nil;
@@ -1826,18 +1837,15 @@ static float doRound(float f) {
             break;
 
         case UIViewAnimationCurveEaseIn:
-            _animationProperties[stackLevel]._animationCurve =
-                [CAMediaTimingFunction functionWithName:@"kCAMediaTimingFunctionEaseIn"];
+            _animationProperties[stackLevel]._animationCurve = [CAMediaTimingFunction functionWithName:@"kCAMediaTimingFunctionEaseIn"];
             break;
 
         case UIViewAnimationCurveEaseOut:
-            _animationProperties[stackLevel]._animationCurve =
-                [CAMediaTimingFunction functionWithName:@"kCAMediaTimingFunctionEaseOut"];
+            _animationProperties[stackLevel]._animationCurve = [CAMediaTimingFunction functionWithName:@"kCAMediaTimingFunctionEaseOut"];
             break;
 
         case UIViewAnimationCurveLinear:
-            _animationProperties[stackLevel]._animationCurve =
-                [CAMediaTimingFunction functionWithName:@"kCAMediaTimingFunctionLinear"];
+            _animationProperties[stackLevel]._animationCurve = [CAMediaTimingFunction functionWithName:@"kCAMediaTimingFunctionLinear"];
             break;
 
         default:
@@ -1960,21 +1968,17 @@ static float doRound(float f) {
     }
 
     if (_animationProperties[stackLevel]._numAnimations > 0) {
-        _animationProperties[stackLevel]._animationNotifier->_numAnimations =
-            _animationProperties[stackLevel]._numAnimations;
+        _animationProperties[stackLevel]._animationNotifier->_numAnimations = _animationProperties[stackLevel]._numAnimations;
         _animationProperties[stackLevel]._animationNotifier->_numStarted = 0;
         _animationProperties[stackLevel]._animationNotifier->_numStopped = 0;
         _animationProperties[stackLevel]._animationNotifier->_animationDidStopSelector =
             _animationProperties[stackLevel]._animationDidStopSelector;
         _animationProperties[stackLevel]._animationNotifier->_animationWillStartSelector =
             _animationProperties[stackLevel]._animationWillStartSelector;
-        _animationProperties[stackLevel]._animationNotifier->_animDelegate =
-            [_animationProperties[stackLevel]._animationDelegate retain];
+        _animationProperties[stackLevel]._animationNotifier->_animDelegate = [_animationProperties[stackLevel]._animationDelegate retain];
         _animationProperties[stackLevel]._animationNotifier->_context = _animationProperties[stackLevel]._context;
-        _animationProperties[stackLevel]._animationNotifier->_animName =
-            [_animationProperties[stackLevel]._animationID copy];
-        _animationProperties[stackLevel]._animationNotifier->_completionBlock =
-            _animationProperties[stackLevel]._completionBlock;
+        _animationProperties[stackLevel]._animationNotifier->_animName = [_animationProperties[stackLevel]._animationID copy];
+        _animationProperties[stackLevel]._animationNotifier->_completionBlock = _animationProperties[stackLevel]._completionBlock;
     } else {
         sendDidStop(_animationProperties[stackLevel]._animationDelegate,
                     _animationProperties[stackLevel]._animationDidStopSelector,
@@ -2048,6 +2052,7 @@ static float doRound(float f) {
     [self removeFromSuperview];
     priv->backgroundColor = nil;
     priv->constraints = nil;
+    priv->associatedConstraints = nil;
     int subviewCount = 0;
     id* subviewsCopy = (id*)alloca(sizeof(id) * priv->childCount);
     LLTREE_FOREACH(curView, priv) {
@@ -2187,7 +2192,9 @@ static float doRound(float f) {
 }
 
 - (void)invalidateIntrinsicContentSize {
-    EbrDebugLog("invalidateIntrinsicContentSize not supported\n");
+    if ([self conformsToProtocol:@protocol(AutoLayoutView)]) {
+        [self invalidateContentSize];
+    }
 }
 
 - (CGSize)intrinsicContentSize {

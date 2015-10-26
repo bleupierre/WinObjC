@@ -614,8 +614,7 @@ static BOOL numberIsNegative(id number) {
         UNumberFormat* nf = unum_open(UNUM_CURRENCY, NULL, -1, NULL, NULL, &status);
         int offset = 0;
         UChar currency[4];
-        double amt = unum_parseDoubleCurrency(
-            nf, (const wchar_t*)[string rawCharacters], [string length], &offset, currency, &status);
+        double amt = unum_parseDoubleCurrency(nf, (const wchar_t*)[string rawCharacters], [string length], &offset, currency, &status);
         unum_close(nf);
         return [NSNumber numberWithDouble:amt];
     }
@@ -623,18 +622,34 @@ static BOOL numberIsNegative(id number) {
     const char* pString = [string UTF8String];
     bool isInt = true;
 
-    if (strstr(pString, ".") != NULL)
+    if (strstr(pString, ".") != NULL) {
         isInt = false;
+    }
+
     if (isInt) {
         __int64 val;
-        val = _strtoi64(pString, NULL, 10);
-        if (val == (__int64)((int)val)) {
-            return [NSNumber numberWithInt:((int)val)];
+        char* pEnd;
+        val = _strtoi64(pString, &pEnd, 10);
+        if (pEnd == pString) {
+            return nil;
+        }
+        if (val == static_cast<__int64>(static_cast<int>(val))) {
+            return [NSNumber numberWithInt:(static_cast<int>(val))];
         } else {
             return [NSNumber numberWithLongLong:val];
         }
     } else {
-        return [NSNumber numberWithFloat:[string floatValue]];
+        double val;
+        char* pEnd;
+        val = strtod(pString, &pEnd);
+        if (pEnd == pString) {
+            return nil;
+        }
+        if (val == static_cast<double>(static_cast<float>(val))) {
+            return [NSNumber numberWithFloat:static_cast<float>(val)];
+        } else {
+            return [NSNumber numberWithDouble:val];
+        }
     }
 }
 

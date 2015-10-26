@@ -78,6 +78,9 @@
     <ClangCompile Include="..\..\tests\unittests\NSString.m">
       <Filter>Source Files</Filter>
     </ClangCompile>
+    <ClangCompile Include="..\..\tests\unittests\NSLayoutContraint.mm">
+      <Filter>Source Files</Filter>
+    </ClangCompile>
     <ClangCompile Include="..\..\tests\unittests\corefoundation.m">
       <Filter>Source Files</Filter>
     </ClangCompile>
@@ -98,6 +101,9 @@
     </ClangCompile>
     <ClangCompile Include="..\..\Frameworks\GLKit\ShaderInfo.mm">
       <Filter>Source Files\GLKit</Filter>
+    </ClangCompile>
+    <ClangCompile Include="..\..\tests\unittests\objcrt_assoc.mm">
+      <Filter>Source Files</Filter>
     </ClangCompile>
   </ItemGroup>
   <ItemGroup>
