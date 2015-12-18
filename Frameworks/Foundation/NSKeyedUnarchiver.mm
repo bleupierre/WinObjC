@@ -187,6 +187,11 @@ static id decodeObjectForUID(NSKeyedUnarchiver* self, NSNumber* uid) {
             checkClassAgainstExpectedClasses(self, classType, self->_expectedClassesInDecodePass.top());
             checkClassForSecureCodingCompliance(self, classType);
 
+            Class mapped = [classType classForKeyedUnarchiver];
+            if (mapped != nil) {
+                classType = mapped;
+            }
+
             [self->_plistStack addObject:plist];
             if (classType != nil) {
                 result = [classType alloc];
@@ -357,10 +362,7 @@ static id _decodeObjectWithPropertyList(NSKeyedUnarchiver* self, id plist) {
 
 - (id)decodeObjectOfClasses:(NSSet*)expectedClasses forKey:(NSString*)key {
     _expectedClassesInDecodePass.emplace(expectedClasses);
-    // We would have caught the ObjC exception and popped in @finally,
-    // but that ICEs the compiler. :( We're also lacking a defer-like construct.
-    std::unique_ptr<void, std::function<void(void*)>> deferPop{ reinterpret_cast<void*>(0x01),
-                                                                [&self](void*) { _expectedClassesInDecodePass.pop(); } };
+    auto deferPop = wil::ScopeExit([&self](){ _expectedClassesInDecodePass.pop(); });
 
     return [self decodeObjectForKey:key];
 }

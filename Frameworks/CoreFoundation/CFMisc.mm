@@ -64,7 +64,9 @@ COREFOUNDATION_EXPORT extern "C" unsigned int sleep(useconds_t secs) {
 COREFOUNDATION_EXPORT extern "C" int sysctlbyname(const char* name, void* out, size_t* outSize, const void*, size_t) {
     if (strcmp(name, "hw.machine") == 0) {
         const int required = 8;
+        size_t receivedOutSize = 0;
         if (outSize) {
+            receivedOutSize = *outSize;
             // If there's no buffer, we have to return the nr. of bytes required for
             // this response.
             *outSize = !out ? required : std::min(*outSize, (size_t)required);
@@ -72,8 +74,10 @@ COREFOUNDATION_EXPORT extern "C" int sysctlbyname(const char* name, void* out, s
             return -1;
         }
 
-        if (out)
-            strncpy((char*)out, "winobjc", *outSize); // outsize is <= required here
+        if (out) {
+            size_t sizeToCopy = (*outSize == 0) ? (*outSize) : (*outSize - 1);
+            strncpy_s((char*)out, receivedOutSize, "winobjc", sizeToCopy); // outsize is <= required here
+        }
         return *outSize < required ? ENOMEM : 0;
     }
     return -1;
@@ -88,27 +92,28 @@ CFStringRef CFCopyDescription(CFTypeRef ref) {
     return (CFStringRef) @"Desc";
 }
 
-__declspec(dllexport) extern "C" uint64_t mach_absolute_time() {
-    static uint32_t start;
-
-    if (start == 0) {
-        start = EbrGetAbsoluteTime();
-    }
-    uint32_t ret = EbrGetAbsoluteTime();
-    ret -= start;
-
-    return ret;
+static int64_t _mach_get_timebase() {
+    LARGE_INTEGER performanceFrequency;
+    FAIL_FAST_IF(0 == QueryPerformanceFrequency(&performanceFrequency));
+    return performanceFrequency.QuadPart;
 }
 
-__declspec(dllexport) extern "C" kern_return_t mach_timebase_info(mach_timebase_info_t tinfo) {
-    //  mach_absolute_time uses EbrGetAbsoluteTime->GetTickCount64 which returns
-    //  the absolute time in milliseconds.  mach_timebase_info returns the
-    //  fraction
-    //  required to repesent it in nanoseconds.
+static int64_t _mach_frequency = _mach_get_timebase();
+
+COREFOUNDATION_EXPORT uint64_t mach_absolute_time() {
+    LARGE_INTEGER current;
+    FAIL_FAST_IF(0 == QueryPerformanceCounter(&current));
+
+    return static_cast<uint64_t>(current.QuadPart);
+}
+
+COREFOUNDATION_EXPORT kern_return_t mach_timebase_info(mach_timebase_info_t tinfo) {
+    //  mach_absolute_time uses QueryPerformanceCounter which returns
+    //  the absolute number of cycles since boot in microseconds.
     //
-    //  ns = millis*1000000/1
-    tinfo->numer = 1000000;
-    tinfo->denom = 1;
+    // Return a timebase representing the conversion between QPC counts and nanoseconds:
+    // 1,000,000,000 nanoseconds per every n counts.
+    *tinfo = {1000000000, _mach_frequency};
 
     return 0;
 }

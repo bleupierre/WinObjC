@@ -1014,5 +1014,8 @@ Property class_getProperty(Class cls, const char* name) {
 
 Property* class_copyPropertyList(Class cls, unsigned int* outCount) {
     OBJC_NOT_IMPLEMENTED_ERROR("class_copyPropertyList is not yet implemented");
+
+    // TODO: Implement
+    *outCount = 0;
     return Nil;
 }

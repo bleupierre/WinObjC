@@ -16,26 +16,88 @@
 
 #include "Starboard.h"
 
+using WCHAR = wchar_t;
+
 #include "Foundation/NSMutableData.h"
 #include "Foundation/NSError.h"
 #include "Foundation/NSString.h"
+#include "Foundation/NSMutableArray.h"
+#include "Foundation/NSValue.h"
+#include <UWP/WindowsStorageStreams.h>
+#include <UWP/WindowsSecurityCryptography.h>
 
-@implementation NSData : NSObject
+#include <COMIncludes.h>
+#include "ErrorHandling.h"
+#include "RawBuffer.h"
+#include <wrl\wrappers\corewrappers.h>
+#include <windows.security.cryptography.h>
+#include <windows.storage.streams.h>
+#include <COMIncludes_End.h>
+
+using namespace Microsoft::WRL;
+using namespace ABI::Windows::Security::Cryptography;
+using namespace ABI::Windows::Storage::Streams;
+using namespace Windows::Foundation;
+
+@implementation NSData
 
 /**
- @Status Stub
+ @Status Caveat
 */
 - (NSString*)base64EncodedStringWithOptions:(NSDataBase64EncodingOptions)options {
-    UNIMPLEMENTED();
-    return nil;
+    // TODO: support the different options. Mostly these around ignoring unknown characters / new lines etc.
+    // Windows has no notion of this so we either need to manually decode or process after the fact wehre possible.
+
+    ComPtr<IBuffer> wrlBuffer = BufferFromRawData(_bytes, _length);
+    if (!wrlBuffer) {
+        return nil;
+    }
+
+    ComPtr<ICryptographicBufferStatics> cryptographicBufferStatics;
+    HRESULT result = GetActivationFactory(Wrappers::HStringReference(RuntimeClass_Windows_Security_Cryptography_CryptographicBuffer).Get(),
+                                          &cryptographicBufferStatics);
+    if (FAILED_LOG(result)) {
+        return nil;
+    }
+
+    Wrappers::HString encodedString;
+    result = cryptographicBufferStatics->EncodeToBase64String(wrlBuffer.Get(), encodedString.GetAddressOf());
+
+    if (FAILED_LOG(result)) {
+        return nil;
+    }
+
+    unsigned int rawLength;
+    const wchar_t* rawEncodedString = WindowsGetStringRawBuffer(encodedString.Get(), &rawLength);
+
+    return [[[NSString alloc] initWithBytes:rawEncodedString length:(rawLength * sizeof(wchar_t)) encoding:NSUnicodeStringEncoding]
+        autorelease];
 }
 
 /**
- @Status Stub
+ @Status Caveat
 */
-- (id)initWithBase64EncodedString:(NSString*)base64String options:(NSDataBase64DecodingOptions)options {
-    UNIMPLEMENTED();
-    return nil;
+- (instancetype)initWithBase64EncodedString:(NSString*)base64String options:(NSDataBase64DecodingOptions)options {
+    // TODO: support the different options. Mostly these around ignoring unknown characters / new lines etc.
+    // Windows has no notion of this so we either need to manually decode or process after the fact wehre possible.
+    RTObject<WSSIBuffer>* decodedBuffer = [WSCCryptographicBuffer decodeFromBase64String:base64String];
+    ComPtr<IInspectable> wrlBuffer(reinterpret_cast<IInspectable*>([decodedBuffer internalObject]));
+    ComPtr<IBufferByteAccess> bufferAccess;
+    HRESULT result = wrlBuffer.As(&bufferAccess);
+
+    // What do I do with an error?
+    if (FAILED_LOG(result)) {
+        return nil;
+    }
+
+    uint8_t* rawBuffer;
+    result = bufferAccess->Buffer(&rawBuffer);
+
+    if (FAILED_LOG(result)) {
+        return nil;
+    }
+
+    return [self initWithBytes:rawBuffer length:[decodedBuffer length]];
 }
 
 /**
@@ -56,15 +118,7 @@
  @Status Interoperable
 */
 + (instancetype)dataWithBytes:(const void*)bytes length:(unsigned)length {
-    NSData* newObj = [self alloc];
-    NSData* pNewObj = (NSData*)newObj;
-
-    pNewObj->_bytes = (uint8_t*)malloc(length);
-    pNewObj->_freeWhenDone = TRUE;
-    memcpy(pNewObj->_bytes, bytes, length);
-    pNewObj->_length = length;
-
-    return [newObj autorelease];
+    return [[[self alloc] initWithBytes:bytes length:length] autorelease];
 }
 
 /**
@@ -244,7 +298,7 @@
  @Status Caveat
  @Notes options parameter not supported
 */
-- (BOOL)writeToFile:(NSString*)filename options:(unsigned)options error:(NSError**)error {
+- (BOOL)writeToFile:(NSString*)filename options:(NSDataWritingOptions)options error:(NSError**)error {
     char* fname = (char*)[filename UTF8String];
 
     EbrDebugLog("NSData writing %s (%d bytes)\n", fname, _length);
@@ -258,6 +312,19 @@
         EbrDebugLog("NSData couldn't open %s for write (with options)\n", fname);
         return FALSE;
     }
+}
+
+/**
+ @Status Caveat
+ @Notes options parameter not supported
+*/
+- (BOOL)writeToURL:(NSURL*)url options:(NSDataWritingOptions)options error:(NSError**)errorp {
+    if (![url isFileURL]) {
+        EbrDebugLog("-[NSData::writeToURL]: Only file: URLs are supported. (%s)", [[url absoluteString] UTF8String]);
+        return NO;
+    }
+
+    return [self writeToFile:[url path] options:options error:errorp];
 }
 
 /**
@@ -279,7 +346,7 @@
  @Status Caveat
  @Notes options parameter not supported
 */
-- (instancetype)initWithContentsOfFile:(NSString*)filename options:(unsigned)options error:(NSError**)error {
+- (instancetype)initWithContentsOfFile:(NSString*)filename options:(NSDataReadingOptions)options error:(NSError**)error {
     if (filename == nil) {
         if (error) {
             *error = [NSError errorWithDomain:@"NSData" code:100 userInfo:nil];
@@ -314,10 +381,67 @@
 }
 
 /**
+ @Status Stub
+*/
+- (instancetype)initWithBase64EncodedData:(NSData*)base64Data options:(NSDataBase64DecodingOptions)options {
+    UNIMPLEMENTED();
+    return nil;
+}
+
+/**
+ @Status Stub
+*/
+- (instancetype)initWithBase64Encoding:(NSString*)base64String {
+    UNIMPLEMENTED();
+    return nil;
+}
+
+/**
+ @Status Stub
+*/
+- (instancetype)initWithBytesNoCopy:(void*)bytes
+                             length:(NSUInteger)length
+                        deallocator:(void (^)(void* bytes, NSUInteger length))deallocator {
+    UNIMPLEMENTED();
+    return nil;
+}
+
+/**
+ @Status Stub
+*/
+- (void)enumerateByteRangesUsingBlock:(void (^)(const void* bytes, NSRange byteRange, BOOL* stop))block {
+    UNIMPLEMENTED();
+}
+
+/**
+ @Status Stub
+*/
+- (NSRange)rangeOfData:(NSData*)dataToFind options:(NSDataSearchOptions)mask range:(NSRange)searchRange {
+    UNIMPLEMENTED();
+    return NSMakeRange(0, 0);
+}
+
+/**
+ @Status Stub
+*/
+- (NSData*)base64EncodedDataWithOptions:(NSDataBase64EncodingOptions)options {
+    UNIMPLEMENTED();
+    return nil;
+}
+
+/**
+ @Status Stub
+*/
+- (NSString*)base64Encoding {
+    UNIMPLEMENTED();
+    return nil;
+}
+
+/**
  @Status Caveat
  @Notes options parameter not supported
 */
-+ (instancetype)dataWithContentsOfFile:(NSString*)filename options:(unsigned)options error:(NSError**)error {
++ (instancetype)dataWithContentsOfFile:(NSString*)filename options:(NSDataReadingOptions)options error:(NSError**)error {
     return [[[self alloc] initWithContentsOfFile:filename options:options error:error] autorelease];
 }
 
@@ -325,7 +449,7 @@
  @Status Caveat
  @Notes options parameter not supported
 */
-+ (instancetype)dataWithContentsOfURL:(NSURL*)url options:(unsigned)options error:(NSError**)error {
++ (instancetype)dataWithContentsOfURL:(NSURL*)url options:(NSDataReadingOptions)options error:(NSError**)error {
     id ret = [self alloc];
     return [[ret initWithContentsOfURL:url options:options error:error] autorelease];
 }
@@ -349,7 +473,7 @@
  @Status Caveat
  @Notes options parameter not supported
 */
-- (instancetype)initWithContentsOfURL:(NSURL*)url options:(unsigned)options error:(NSError**)error {
+- (instancetype)initWithContentsOfURL:(NSURL*)url options:(NSDataReadingOptions)options error:(NSError**)error {
     EbrDebugLog("initWithContentsOfURL: %s\n", [[url absoluteString] UTF8String]);
 
     if ([url isFileURL]) {

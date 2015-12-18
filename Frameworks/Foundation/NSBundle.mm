@@ -24,19 +24,17 @@
 #include "Foundation/NSMutableDictionary.h"
 #include "Foundation/NSMutableArray.h"
 #include "Foundation/NSFileManager.h"
+#include "Foundation/NSNib.h"
 
 #include <sys/stat.h>
 
 @class NSNib;
 
-#ifdef WIN32
-#define strcasecmp stricmp
-#endif
-
 static NSString* mainBundlePath;
 static NSMutableArray* allBundles;
 static NSBundle* mainBundle;
 char g_globalExecutableName[255] = "";
+static const int c_maxPath = 4096;
 static IWLazyClassLookup _LazyCALayer("UIDevice");
 
 bool isTabletDevice() {
@@ -47,6 +45,7 @@ class StringPool {
     char* _base;
     int _maxLen;
     int _curLen;
+    int _availableSpace;
 
 public:
     StringPool() {
@@ -69,10 +68,15 @@ public:
     }
 
     char* AddString(char* str) {
-        char* ret = AddString(strlen(str));
-        strcpy(ret, str);
+        size_t strLen = strlen(str);
+        char* ret = AddString(strLen);
+        strcpy_s(ret, GetAvailableSpace() + strLen, str);
 
         return ret;
+    }
+
+    int GetAvailableSpace() {
+        return _maxLen - _curLen + 1;
     }
 };
 
@@ -159,7 +163,7 @@ static bool hasExtension(const char* name, const char* ext) {
 
     if (nameLen < extLen)
         return false;
-    if (strcasecmp(&name[nameLen - extLen], ext) == 0)
+    if (_stricmp(&name[nameLen - extLen], ext) == 0)
         return true;
     return false;
 }
@@ -177,15 +181,17 @@ static char* copyWithoutExtension(const char* name, const char* ext) {
 
 bool ScanFilename(BundleFile* dest, char* pDirectory, char* pFilename) {
     memset(dest, 0, sizeof(BundleFile));
-    dest->pszFullPath = (char*)_bundleStrings.AddString(strlen(pDirectory) + strlen(pFilename) + 1);
+    size_t strLen = strlen(pDirectory) + strlen(pFilename) + 1;
+    dest->pszFullPath = (char*)_bundleStrings.AddString(strLen);
+    int pszFullPathSize = _bundleStrings.GetAvailableSpace() + strLen;
 
     if (strlen(pDirectory) > 0) {
-        sprintf(dest->pszFullPath, "%s/%s", pDirectory, pFilename);
+        sprintf_s(dest->pszFullPath, pszFullPathSize, "%s/%s", pDirectory, pFilename);
     } else {
-        sprintf(dest->pszFullPath, "%s", pFilename);
+        sprintf_s(dest->pszFullPath, pszFullPathSize, "%s", pFilename);
     }
-    char szTemp[4096];
-    strcpy(szTemp, pDirectory);
+    char szTemp[c_maxPath];
+    strcpy_s(szTemp, sizeof(szTemp), pDirectory);
     char* save;
     char* curToken;
     curToken = strtok_r(szTemp, "/", &save);
@@ -203,7 +209,7 @@ bool ScanFilename(BundleFile* dest, char* pDirectory, char* pFilename) {
     }
 
     //  Parse filename
-    strcpy(szTemp, pFilename);
+    strcpy_s(szTemp, sizeof(szTemp), pFilename);
 
     //  Scan for a .
     char* pExtension = strrchr(szTemp, '.');
@@ -268,15 +274,23 @@ __declspec(dllexport) bool isOSTarget(NSString* versionStr) {
     return false;
 }
 
-@implementation NSBundle : NSObject {
+@interface NSBundle () {
     NSDictionary* _infoDictionary;
     NSDictionary* _localizedStrings;
-    NSString* _bundlePath;
     NSMutableArray* _preferredLocalizations;
 
     struct BundleFile* _files;
-    int _numFiles, _maxFiles;
+    int _numFiles;
+    int _maxFiles;
 }
+
+@property (readwrite, copy) NSURL* bundleURL;
+@property (readwrite, copy) NSString* bundlePath;
+
+@end
+
+@implementation NSBundle
+
 static void ScanDir(NSBundle* self, char* curDirectory, const char* path) {
     EbrDir* dir = EbrOpenDir(path);
     if (dir) {
@@ -296,14 +310,14 @@ static void ScanDir(NSBundle* self, char* curDirectory, const char* path) {
                     self->_numFiles++;
                 }
 
-                char fullPath[4096]; // max path?
-                char relativePath[4096];
-                sprintf(fullPath, "%s/%s", path, ent.fileName);
+                char fullPath[c_maxPath]; // max path?
+                char relativePath[c_maxPath];
+                sprintf_s(fullPath, sizeof(fullPath), "%s/%s", path, ent.fileName);
 
                 if (strlen(curDirectory) > 0) {
-                    sprintf(relativePath, "%s/%s", curDirectory, ent.fileName);
+                    sprintf_s(relativePath, sizeof(relativePath), "%s/%s", curDirectory, ent.fileName);
                 } else {
-                    sprintf(relativePath, "%s", ent.fileName);
+                    sprintf_s(relativePath, sizeof(relativePath), "%s", ent.fileName);
                 }
                 ScanDir(self, relativePath, fullPath);
             } else {
@@ -478,19 +492,19 @@ static BundleFile* findFullFile(NSBundle* self, NSString* filename, NSString* ex
     char* pDirectory = (char*)[directory UTF8String];
     char* pLocalization = (char*)[localization UTF8String];
 
-    char szFullPath[4096];
-    strcpy(szFullPath, "");
+    char szFullPath[c_maxPath];
+    strcpy_s(szFullPath, sizeof(szFullPath), "");
     if (pDirectory) {
-        strcat(szFullPath, pDirectory);
-        strcat(szFullPath, "/");
+        strcat_s(szFullPath, sizeof(szFullPath) - strlen(szFullPath), pDirectory);
+        strcat_s(szFullPath, sizeof(szFullPath) - strlen(szFullPath), "/");
     }
 
     if (pFilename) {
-        strcat(szFullPath, pFilename);
+        strcat_s(szFullPath, sizeof(szFullPath) - strlen(szFullPath), pFilename);
     }
     if (pExtension && strlen(pExtension) > 0) {
-        strcat(szFullPath, ".");
-        strcat(szFullPath, pExtension);
+        strcat_s(szFullPath, sizeof(szFullPath) - strlen(szFullPath), ".");
+        strcat_s(szFullPath, sizeof(szFullPath) - strlen(szFullPath), pExtension);
     }
 
     BundleFileComparison b;
@@ -577,34 +591,15 @@ static NSArray* findFilesDirectory(NSBundle* self, NSString* bundlePath, NSStrin
             continue;
 
         if (cur->pszLocalization == NULL) {
-            char ret[4096];
-            sprintf(ret, "%s%s", [bundlePath UTF8String], cur->pszFullPath);
-            [retArr addObject:[NSString stringWithCString:ret]];
-            continue;
-        }
-        if (strCompNull(cur->pszLocalization, "Base") == 0) {
-            char ret[4096];
-            sprintf(ret, "%s%s", [bundlePath UTF8String], cur->pszFullPath);
-            [retArr addObject:[NSString stringWithCString:ret]];
-            continue;
-        }
-        if (strCompNull(cur->pszLocalization, "en") == 0) {
-            char ret[4096];
-            sprintf(ret, "%s%s", [bundlePath UTF8String], cur->pszFullPath);
-            [retArr addObject:[NSString stringWithCString:ret]];
-            continue;
-        }
-        if (strCompNull(cur->pszLocalization, "English") == 0) {
-            char ret[4096];
-            sprintf(ret, "%s%s", [bundlePath UTF8String], cur->pszFullPath);
-            [retArr addObject:[NSString stringWithCString:ret]];
-            continue;
-        }
-        if (strCompNull(cur->pszLocalization, "eng") == 0) {
-            char ret[4096];
-            sprintf(ret, "%s%s", [bundlePath UTF8String], cur->pszFullPath);
-            [retArr addObject:[NSString stringWithCString:ret]];
-            continue;
+            [retArr addObject:[NSString stringWithFormat:@"%@%s", bundlePath, cur->pszFullPath]];
+        } else if (strCompNull(cur->pszLocalization, "Base") == 0) {
+            [retArr addObject:[NSString stringWithFormat:@"%@%s", bundlePath, cur->pszFullPath]];
+        } else if (strCompNull(cur->pszLocalization, "en") == 0) {
+            [retArr addObject:[NSString stringWithFormat:@"%@%s", bundlePath, cur->pszFullPath]];
+        } else if (strCompNull(cur->pszLocalization, "English") == 0) {
+            [retArr addObject:[NSString stringWithFormat:@"%@%s", bundlePath, cur->pszFullPath]];
+        } else if (strCompNull(cur->pszLocalization, "eng") == 0) {
+            [retArr addObject:[NSString stringWithFormat:@"%@%s", bundlePath, cur->pszFullPath]];
         }
     }
 
@@ -640,7 +635,7 @@ static NSArray* findFilesDirectory(NSBundle* self, NSString* bundlePath, NSStrin
  @Status Interoperable
 */
 + (NSArray*)allBundles {
-    return [allBundles retain];
+    return allBundles;
 }
 
 /**
@@ -652,23 +647,22 @@ static NSArray* findFilesDirectory(NSBundle* self, NSString* bundlePath, NSStrin
     }
 
     if (mainBundle == nil && mainBundlePath != nil) {
-        mainBundle = [self bundleWithPath:mainBundlePath];
-        [mainBundle retain];
+        mainBundle = [[self bundleWithPath:mainBundlePath] retain];
     }
 
-    return [mainBundle retain];
+    return mainBundle;
 }
 
 /**
  @Status Interoperable
 */
 + (NSBundle*)bundleWithPath:(NSString*)path {
-    return [[self alloc] initWithPath:path];
+    return [[[self alloc] initWithPath:path] autorelease];
 }
 
 + (NSBundle*)bundleWithURL:(NSURL*)url {
     if ([url isFileURL]) {
-        return [[self alloc] initWithPath:[url path]];
+        return [[[self alloc] initWithPath:[url path]] autorelease];
     } else {
         EbrDebugLog("bad URL\n");
         assert(0);
@@ -696,61 +690,78 @@ static NSArray* findFilesDirectory(NSBundle* self, NSString* bundlePath, NSStrin
         return nil;
     }
 
-    [allBundles addObject:self];
-    _bundlePath = [path copy];
-    if (![_bundlePath hasSuffix:@"/"]) {
-        _bundlePath = [[_bundlePath stringByAppendingString:@"/"] retain];
-    }
+    if (self = [super init]) {
+        [allBundles addObject:self];
 
-    logPerf("Scanning assets");
-    scanBundle(self, _bundlePath);
-    logPerf("Assets scanned");
+        if (![path hasSuffix:@"/"]) {
+            _bundlePath = [[path stringByAppendingString:@"/"] retain];
+        } else {
+            _bundlePath = [path copy];
+        }
 
-    NSData* data = nil;
+        _bundleURL = [[NSURL fileURLWithPath:_bundlePath] retain];
 
-    if (data == nil) {
-        NSString* nextPath = [path stringByAppendingPathComponent:@"Info.plist"];
-        data = [NSData dataWithContentsOfFile:nextPath];
-        path = nextPath;
-    }
-    if (data == nil) {
-        NSString* nextPath = [path stringByAppendingPathComponent:@"Contents/Info.plist"];
-        data = [NSData dataWithContentsOfFile:nextPath];
-        path = nextPath;
-    }
+        logPerf("Scanning assets");
+        scanBundle(self, _bundlePath);
+        logPerf("Assets scanned");
 
-    if ([data length] > 0) {
-        _infoDictionary =
-            [[NSPropertyListSerialization propertyListFromData:data mutabilityOption:NSPropertyListImmutable format:0 errorDescription:0]
+        NSData* data = nil;
+
+        if (data == nil) {
+            NSString* nextPath = [path stringByAppendingPathComponent:@"Info.plist"];
+            data = [NSData dataWithContentsOfFile:nextPath];
+            path = nextPath;
+        }
+        if (data == nil) {
+            NSString* nextPath = [path stringByAppendingPathComponent:@"Contents/Info.plist"];
+            data = [NSData dataWithContentsOfFile:nextPath];
+            path = nextPath;
+        }
+
+        if ([data length] > 0) {
+            _infoDictionary = [
+                [NSPropertyListSerialization propertyListFromData:data mutabilityOption:NSPropertyListImmutable format:0 errorDescription:0]
                 retain];
 
-        //  Find localized sttrings
-        NSString* stringPath = [self pathForResource:@"Localizable" ofType:@"strings"];
+            //  Find localized sttrings
+            NSString* stringPath = [self pathForResource:@"Localizable" ofType:@"strings"];
 
-        if (stringPath != nil) {
-            NSData* stringData = [NSData dataWithContentsOfFile:stringPath];
-            if ([stringData length] > 0) {
-                char* bytes = (char*)[stringData bytes];
-                if (*((WORD*)bytes) == 0xFFFE || *((WORD*)bytes) == 0xFEFF) {
-                    NSString* str = [[[NSString alloc] initWithData:stringData encoding:NSUTF16BigEndianStringEncoding] autorelease];
-                    _localizedStrings = [[str propertyListFromStringsFileFormat] retain];
-                } else if (*((WORD*)bytes) != 0xbbef) {
-                    _localizedStrings = [[NSPropertyListSerialization propertyListFromData:stringData
-                                                                          mutabilityOption:NSPropertyListImmutable
-                                                                                    format:0
-                                                                          errorDescription:0] retain];
-                }
+            if (stringPath != nil) {
+                NSData* stringData = [NSData dataWithContentsOfFile:stringPath];
+                if ([stringData length] > 0) {
+                    char* bytes = (char*)[stringData bytes];
+                    if (*((WORD*)bytes) == 0xFFFE || *((WORD*)bytes) == 0xFEFF) {
+                        NSString* str = [[[NSString alloc] initWithData:stringData encoding:NSUTF16BigEndianStringEncoding] autorelease];
+                        _localizedStrings = [[str propertyListFromStringsFileFormat] retain];
+                    } else if (*((WORD*)bytes) != 0xbbef) {
+                        _localizedStrings = [[NSPropertyListSerialization propertyListFromData:stringData
+                                                                              mutabilityOption:NSPropertyListImmutable
+                                                                                        format:0
+                                                                              errorDescription:0] retain];
+                    }
 
-                if (_localizedStrings == nil) {
-                    NSString* str = [[[NSString alloc] initWithData:stringData encoding:NSUTF8StringEncoding] autorelease];
-                    _localizedStrings = [str propertyListFromStringsFileFormat];
+                    if (_localizedStrings == nil) {
+                        NSString* str = [[[NSString alloc] initWithData:stringData encoding:NSUTF8StringEncoding] autorelease];
+                        _localizedStrings = [[str propertyListFromStringsFileFormat] retain];
+                    }
                 }
             }
         }
+
+        logPerf("Bundle initialized");
     }
 
-    logPerf("Bundle initialized");
     return self;
+}
+
+- (void)dealloc {
+    [_infoDictionary release];
+    [_localizedStrings release];
+    [_preferredLocalizations release];
+    [_bundleURL release];
+    [_bundlePath release];
+
+    [super dealloc];
 }
 
 /**
@@ -777,10 +788,10 @@ static NSArray* findFilesDirectory(NSBundle* self, NSString* bundlePath, NSStrin
             if (path != nil) {
                 NSData* stringData = [NSData dataWithContentsOfFile:path];
                 char* bytes = (char*)[stringData bytes];
-                stringDict = [[NSPropertyListSerialization propertyListFromData:stringData
-                                                               mutabilityOption:NSPropertyListImmutable
-                                                                         format:0
-                                                               errorDescription:0] retain];
+                stringDict = [NSPropertyListSerialization propertyListFromData:stringData
+                                                              mutabilityOption:NSPropertyListImmutable
+                                                                        format:0
+                                                              errorDescription:0];
 
                 [tables setObject:stringDict forKey:table];
             }
@@ -806,22 +817,22 @@ static NSString* makePath(NSBundle* self,
                           NSString* localization,
                           NSString* sublocal = nil,
                           NSString* devtype = nil) {
-    char szPath[4096];
-    sprintf(szPath, "%s/", [self->_bundlePath UTF8String]);
+    char szPath[c_maxPath];
+    size_t numCharWritten = sprintf_s(szPath, sizeof(szPath), "%s/", [self->_bundlePath UTF8String]);
 
     if (name == nil) {
         assert(0);
     }
     if (localization != nil) {
-        sprintf(&szPath[strlen(szPath)], "/%s.lproj/", [localization UTF8String]);
+        numCharWritten += sprintf_s(&szPath[numCharWritten], sizeof(szPath) - numCharWritten, "/%s.lproj/", [localization UTF8String]);
     }
     if (sublocal != nil) {
-        sprintf(&szPath[strlen(szPath)], "/%s/", [sublocal UTF8String]);
+        numCharWritten += sprintf_s(&szPath[numCharWritten], sizeof(szPath) - numCharWritten, "/%s/", [sublocal UTF8String]);
     }
     if (directory != nil) {
-        sprintf(&szPath[strlen(szPath)], "/%s/", [directory UTF8String]);
+        numCharWritten += sprintf_s(&szPath[numCharWritten], sizeof(szPath) - numCharWritten, "/%s/", [directory UTF8String]);
     }
-    sprintf(&szPath[strlen(szPath)], "/%s", [name UTF8String]);
+    sprintf_s(&szPath[numCharWritten], sizeof(szPath) - numCharWritten, "/%s", [name UTF8String]);
     if (!isTabletDevice()) {
         if (strstr(szPath, "~iphone") != NULL) {
             char* pPos = strstr(szPath, "~iphone");
@@ -838,9 +849,9 @@ static NSString* makePath(NSBundle* self,
         char* pExtension = (char*)[extension UTF8String];
 
         if (pExtension[0] == '.' || (strlen(szPath) > 0 && szPath[strlen(szPath) - 1] == '.')) {
-            sprintf(&szPath[strlen(szPath)], "%s", pExtension);
+            sprintf_s(&szPath[strlen(szPath)], sizeof(szPath) - strlen(szPath), "%s", pExtension);
         } else {
-            sprintf(&szPath[strlen(szPath)], ".%s", pExtension);
+            sprintf_s(&szPath[strlen(szPath)], sizeof(szPath) - strlen(szPath), ".%s", pExtension);
         }
     }
     if (devtype != nil && [devtype length] > 0) {
@@ -851,7 +862,7 @@ static NSString* makePath(NSBundle* self,
             memmove(pExtPos + strlen(pdevtype), pExtPos, (szPath + strlen(szPath) - pExtPos) + 1);
             memcpy(pExtPos, pdevtype, strlen(pdevtype));
         } else {
-            sprintf(&szPath[strlen(szPath)], "%s", pdevtype);
+            sprintf_s(&szPath[strlen(szPath)], sizeof(szPath) - strlen(szPath), "%s", pdevtype);
         }
     }
 
@@ -907,28 +918,27 @@ return ret;
 }
 
 static NSString* makePathNonLocal(NSString* name, NSString* extension, NSString* directory, NSString* localization) {
-    char szPath[4096];
-    strcpy(szPath, "");
+    NSString* path = [NSString stringWithFormat:@""];
 
     if (name == nil) {
         assert(0);
     }
     if (localization != nil) {
-        sprintf(&szPath[strlen(szPath)], "/%s.lproj/", [localization UTF8String]);
+        path = [path stringByAppendingFormat:@"/%@.lproj/", localization];
     }
     if (directory != nil) {
-        sprintf(&szPath[strlen(szPath)], "/%s/", [directory UTF8String]);
+        path = [path stringByAppendingFormat:@"/%@/", directory];
     }
-    sprintf(&szPath[strlen(szPath)], "/%s", [name UTF8String]);
+    path = [path stringByAppendingFormat:@"/%@", name];
     if (extension != nil && [extension length] > 0) {
         char* pExtension = (char*)[extension UTF8String];
         if (pExtension[0] == '.')
             pExtension++;
 
-        sprintf(&szPath[strlen(szPath)], ".%s", pExtension);
+        path = [path stringByAppendingFormat:@".%s", pExtension];
     }
 
-    return [NSString stringWithCString:szPath];
+    return path;
 }
 
 static NSString* checkPathNonLocal(NSString* name, NSString* extension, NSString* directory, NSString* localization) {
@@ -1004,12 +1014,11 @@ static NSString* checkPathNonLocal(NSString* name, NSString* extension, NSString
 - (NSString*)pathForResource:(NSString*)name ofType:(NSString*)extension {
     BundleFile* pFile = findFile(self, name, extension);
     if (pFile) {
-        char ret[4096];
-        sprintf(ret, "%s/%s", [_bundlePath UTF8String], pFile->pszFullPath);
+        NSString* ret = [NSString stringWithFormat:@"%@/%s", _bundlePath, pFile->pszFullPath];
 #ifdef NSBUNDLE_LOG
-        EbrDebugLog("Found %s\n", ret);
+        EbrDebugLog("Found %s\n", [ret UTF8String]);
 #endif
-        return [NSString stringWithCString:ret];
+        return ret;
     }
     /*
     if ( [name length] == 0 ) {
@@ -1045,16 +1054,15 @@ static NSString* checkPathNonLocal(NSString* name, NSString* extension, NSString
 */
 - (NSString*)pathForResource:(NSString*)name ofType:(NSString*)extension inDirectory:(NSString*)directory {
     BundleFile* pFile = findFileDirectory(self, name, extension, directory);
-    NSString* retPath = nil;
     if (pFile) {
-        char ret[4096];
-        sprintf(ret, "%s%s", [_bundlePath UTF8String], pFile->pszFullPath);
+        NSString* ret = [NSString stringWithFormat:@"%@%s", _bundlePath, pFile->pszFullPath];
 #ifdef NSBUNDLE_LOG
-        EbrDebugLog("Found %s\n", ret);
+        EbrDebugLog("Found %s\n", [ret UTF8String]);
 #endif
-        retPath = [NSString stringWithCString:ret];
+        return ret;
     }
-    return retPath;
+
+    return nil;
 }
 
 /**
@@ -1067,12 +1075,11 @@ static NSString* checkPathNonLocal(NSString* name, NSString* extension, NSString
              forLocalization:(NSString*)localization {
     BundleFile* pFile = findFileDirectoryLocal(self, name, extension, directory, localization);
     if (pFile) {
-        char ret[4096];
-        sprintf(ret, "%s%s", [_bundlePath UTF8String], pFile->pszFullPath);
+        NSString* ret = [NSString stringWithFormat:@"%@%s", _bundlePath, pFile->pszFullPath];
 #ifdef NSBUNDLE_LOG
-        EbrDebugLog("Found %s\n", ret);
+        EbrDebugLog("Found %s\n", [ret UTF8String]);
 #endif
-        return [NSString stringWithCString:ret];
+        return ret;
     }
     return nil;
     /*
@@ -1102,7 +1109,7 @@ static NSString* checkPathNonLocal(NSString* name, NSString* extension, NSString
  @Notes Returns bundlePath
 */
 - (NSString*)resourcePath {
-    return [_bundlePath retain];
+    return [[_bundlePath retain] autorelease];
 }
 
 /**
@@ -1111,13 +1118,6 @@ static NSString* checkPathNonLocal(NSString* name, NSString* extension, NSString
 - (NSString*)executablePath {
     UNIMPLEMENTED();
     return [_bundlePath stringByAppendingPathComponent:[NSString stringWithCString:g_globalExecutableName]];
-}
-
-/**
- @Status Interoperable
-*/
-- (NSString*)bundlePath {
-    return _bundlePath;
 }
 
 /**
@@ -1198,10 +1198,9 @@ static NSString* checkPathNonLocal(NSString* name, NSString* extension, NSString
 }
 
 /**
- @Status Caveat
- @Notes options parameter not supported
+ @Status Interoperable
 */
-- (NSArray*)loadNibNamed:(NSString*)name owner:(id)owner options:(NSString*)options {
+- (NSArray*)loadNibNamed:(NSString*)name owner:(id)owner options:(NSDictionary*)options {
     assert(options == nil);
 
     NSString* nibFile = [self pathForResource:name ofType:@"nib"];
@@ -1210,10 +1209,8 @@ static NSString* checkPathNonLocal(NSString* name, NSString* extension, NSString
         EbrDebugLog("*** NIB not found ***\n");
         return nil;
     } else {
-        NSNib* nib = [NSNib alloc];
-        [nib _setBundle:self];
-        NSArray* topLevelObjects = [nib loadNib:nibFile withOwner:owner];
-        [nib release];
+        NSNib* nib = [NSNib nibWithNibName: nibFile bundle: self];
+        NSArray* topLevelObjects = [nib instantiateWithOwner: owner options: options];
 
         return topLevelObjects;
     }
@@ -1224,6 +1221,20 @@ static NSString* checkPathNonLocal(NSString* name, NSString* extension, NSString
 */
 - (NSArray*)pathsForResourcesOfType:(NSString*)type inDirectory:(NSString*)directory {
     return findFilesDirectory(self, _bundlePath, type, directory);
+}
+
+/**
+ @Status Interoperable
+*/
+- (NSArray*)URLsForResourcesWithExtension:(NSString*)type subdirectory:(NSString*)directory {
+    NSArray *paths = findFilesDirectory(self, _bundlePath, type, directory);
+
+    NSMutableArray *ret = [NSMutableArray new];
+    for ( NSString *path in paths ) {
+        [ret addObject: [NSURL fileURLWithPath: path]];
+    }
+
+    return [ret autorelease];
 }
 
 /**
