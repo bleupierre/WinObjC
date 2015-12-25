@@ -25,8 +25,9 @@ void NSStringForceinclude() {
     [NSString class];
 }
 
-NSString* const UITextAttributeFont = @"UITextAttributeFont";
-NSString* const UITextAttributeTextColor = @"UITextAttributeTextColor";
+// Contingent upon VSO 5795281: All of these names need to be compatible with the reference platform.
+NSString* const UITextAttributeFont = NSFontAttributeName;
+NSString* const UITextAttributeTextColor = NSForegroundColorAttributeName;
 NSString* const UITextAttributeTextShadowColor = @"UITextAttributeTextShadowColor";
 NSString* const UITextAttributeTextShadowOffset = @"UITextAttributeTextShadowOffset";
 
@@ -638,7 +639,7 @@ static void drawString(UIFont* font,
 */
 - (CGSize)sizeWithAttributes:(NSDictionary*)attrs {
     if (attrs == nil) {
-        return {0, 0};
+        return { 0, 0 };
     }
 
     UIColor* uiShadowColor = [attrs valueForKey:UITextAttributeTextShadowColor];
@@ -662,17 +663,72 @@ static void drawString(UIFont* font,
     if (uiFont != nil) {
         return [self sizeWithFont:uiFont];
     }
-    
+
     // No font was found
-    return {0, 0};
+    return { 0, 0 };
 }
 
 /**
  @Status Stub
 */
-- (CGRect)boundingRectWithSize:(CGSize)size options:(NSStringDrawingOptions)options attributes:(NSDictionary*)attributes context:(NSStringDrawingContext*)context {
+- (CGRect)boundingRectWithSize:(CGSize)size
+                       options:(NSStringDrawingOptions)options
+                    attributes:(NSDictionary*)attributes
+                       context:(NSStringDrawingContext*)context {
     UNIMPLEMENTED();
-    return {{0, 0}, 20, 20};
+    return { { 0, 0 }, 20, 20 };
+}
+
+@end
+
+@implementation NSAttributedString (NSExtendedStringDrawing)
+
+/**
+ @Status Stub
+*/
+- (void)drawAtPoint:(CGPoint)point {
+    UNIMPLEMENTED();
+}
+
+/**
+ @Status Stub
+*/
+- (void)drawInRect:(CGRect)rect {
+    UNIMPLEMENTED();
+}
+
+/**
+ @Status Stub
+*/
+- (void)drawWithRect:(CGRect)rect options:(NSStringDrawingOptions)options context:(NSStringDrawingContext*)context {
+    UNIMPLEMENTED();
+}
+
+/**
+ @Status Stub
+*/
+- (CGRect)boundingRectWithSize:(CGSize)size options:(NSStringDrawingOptions)options context:(NSStringDrawingContext*)context {
+    UNIMPLEMENTED();
+    return { 0, 0, 0, 0 };
+}
+
+/**
+ @Status Stub
+*/
+- (CGRect)boundingRectWithSize:(CGSize)size
+                       options:(NSStringDrawingOptions)options
+                    attributes:(NSDictionary*)attributes
+                       context:(NSStringDrawingContext*)context {
+    UNIMPLEMENTED();
+    return { 0, 0, 0, 0 };
+}
+
+/**
+ @Status Stub
+*/
+- (CGSize)size {
+    UNIMPLEMENTED();
+    return { 0, 0 };
 }
 
 @end

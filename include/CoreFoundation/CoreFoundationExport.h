@@ -14,11 +14,11 @@
 //
 //******************************************************************************
 
-#ifndef COREFOUNDATION_EXPORT
-#define COREFOUNDATION_EXPORT __declspec(dllimport) extern
-#endif
+#include <Foundation/FoundationExport.h>
 
-#define COREFOUNDATION_EXPORT_DLL __declspec(dllexport) extern
+#ifndef COREFOUNDATION_EXPORT
+#define COREFOUNDATION_EXPORT FOUNDATION_EXPORT
+#endif
 
 #ifndef COREFOUNDATION_EXTERNC_BEGIN
 #if defined(__cplusplus)

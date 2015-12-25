@@ -56,7 +56,7 @@ static inline id m_assert(const char* file, int line) {
 }
 static inline float m_assert_float() {
     printf("_m sent @ %s:%d\n", __FILE__, __LINE__);
-    return nil;
+    return 0.0;
 }
 #else
 static inline unsigned int m_assert(const char* file, int line) {
@@ -268,7 +268,7 @@ public:
 
 #ifdef __OBJC__
 extern "C" BOOL object_isMethodFromClass(id dwObj, SEL pSel, const char* fromClass);
-bool isOSTarget(NSString* versionStr);
+extern "C" BOOL isOSTarget(NSString* versionStr);
 #endif
 
 typedef unsigned __int64 uint64_t;

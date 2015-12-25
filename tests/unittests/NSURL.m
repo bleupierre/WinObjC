@@ -14,7 +14,7 @@
 //
 //******************************************************************************
 
-#include "gtest-api.h"
+#include <TestFramework.h>
 #import <Foundation/Foundation.h>
 
 void testNSURLMethod(SEL selector, NSURL* input, id argument, NSURL* expected) {
@@ -186,13 +186,12 @@ TEST(NSFoundation, NSURL_URLByAppendingPathExtension) {
 }
 
 TEST(NSFoundation, NSURL_checkResourceIsReachable) {
-
     // construct target URL using current directory and relative URL
     NSFileManager* manager = [NSFileManager defaultManager];
     NSURL *baseURL = [NSURL URLWithString: [manager currentDirectoryPath]];
     NSURL *targetURL = [NSURL URLWithString: @"data/NSFileManagerUT.txt" relativeToURL:baseURL];
-    ASSERT_TRUE_MSG([targetURL checkResourceIsReachableAndReturnError:nil], "The target URL %@ exists", targetURL);
+    ASSERT_TRUE_MSG([targetURL checkResourceIsReachableAndReturnError:nullptr], "The target URL %@ exists", targetURL);
 
     NSURL *targetURLNonExist = [NSURL URLWithString: @"data/foo.txt" relativeToURL:baseURL];
-    ASSERT_FALSE_MSG([targetURLNonExist checkResourceIsReachableAndReturnError:nil], "The target %@URL does not exist", targetURLNonExist);
+    ASSERT_FALSE_MSG([targetURLNonExist checkResourceIsReachableAndReturnError:nullptr], "The target %@URL does not exist", targetURLNonExist);
 }
